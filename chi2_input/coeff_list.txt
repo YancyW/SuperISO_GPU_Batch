@@ -1,0 +1,97 @@
+######## Remove `# ` to uncomment and include in the scan #########
+
+########################
+### Flavor-Universal ###
+########################
+### Non-Primed ###
+# dC7_real
+# dC7_imag
+# dC8_real
+# dC8_imag
+
+# dC9_real
+# dC9_imag
+# dC10_real
+# dC10_imag
+# dCQ1_real
+# dCQ1_imag
+# dCQ2_real
+# dCQ2_imag
+
+
+### Primed ###
+# dC7_prime_real
+# dC7_prime_imag
+# dC8_prime_real
+# dC8_prime_imag
+
+# dC9_prime_real
+# dC9_prime_imag
+# dC10_prime_real
+# dC10_prime_imag
+# dCQ1_prime_real
+# dCQ1_prime_imag
+# dCQ2_prime_real
+# dCQ2_prime_imag
+
+
+
+########################
+### Flavor-specific ####
+########################
+### Non-Primed ###
+# dC9_mu_real
+# dC9_mu_imag
+# dC10_mu_real
+# dC10_mu_imag
+# dCQ1_mu_real
+# dCQ1_mu_imag
+# dCQ2_mu_real
+# dCQ2_mu_imag
+
+# dC9_e_real
+# dC9_e_imag
+# dC10_e_real
+# dC10_e_imag
+# dCQ1_e_real
+# dCQ1_e_imag
+# dCQ2_e_real
+# dCQ2_e_imag
+
+# dC9_tau_real
+# dC9_tau_imag
+# dC10_tau_real
+# dC10_tau_imag
+# dCQ1_tau_real
+# dCQ1_tau_imag
+# dCQ2_tau_real
+# dCQ2_tau_imag
+
+
+### Primed ###
+# dC9_mu_prime_real
+# dC9_mu_prime_imag
+# dC10_mu_prime_real
+# dC10_mu_prime_imag
+# dCQ1_mu_prime_real
+# dCQ1_mu_prime_imag
+# dCQ2_mu_prime_real
+# dCQ2_mu_prime_imag
+
+# dC9_e_prime_real
+# dC9_e_prime_imag
+# dC10_e_prime_real
+# dC10_e_prime_imag
+# dCQ1_e_prime_real
+# dCQ1_e_prime_imag
+# dCQ2_e_prime_real
+# dCQ2_e_prime_imag
+
+# dC9_tau_prime_real
+# dC9_tau_prime_imag
+# dC10_tau_prime_real
+# dC10_tau_prime_imag
+# dCQ1_tau_prime_real
+# dCQ1_tau_prime_imag
+# dCQ2_tau_prime_real
+# dCQ2_tau_prime_imag

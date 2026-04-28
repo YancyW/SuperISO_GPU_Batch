@@ -1,0 +1,72 @@
+// DO NOT CHANGE FORMAT; ONLY VALUES SHOULD BE CHANGED
+// WILSON COEFFICIENTS ASSUMED DIFFERENT FOR VARIOUS FLAVOURS
+// MAKE SURE TO PUT SAME VALUE FOR _e, _mu, _tau IF YOU WANT LEPTON FLAVOUR UNIVERSALITY
+
+
+
+/* ** Wilson coefficients for the electron sector ** */
+
+/* SM-like Wilson coefficients for electron */
+deltaC[17] = 0. + I*(0.) /* C7e */
+deltaC[19] = 0. + I*(0.) /* C9e */
+deltaC[20] = 0. + I*(0.) /* C10e */
+
+/* Primed Wilson coefficients for electron */
+deltaCp[17] = 0. + I*(0.) /* C7prime_e */
+deltaCp[19] = 0. + I*(0.) /* C9prime_e */
+deltaCp[20] = 0. + I*(0.) /* C10prime_e */
+
+/* Scalar and pseudoscalar Wilson coefficients for electron */
+deltaCQ[3] = 0. + I*(0.) /* CQ1tau */
+deltaCQ[4] = 0. + I*(0.) /* CQ2tau  */
+
+/* Primed scalar and pseudoscalar Wilson coefficients for electron */
+deltaCQp[3] = 0. + I*(0.) /* CQ1prime_tau scalar */
+deltaCQp[4] = 0. + I*(0.) /* CQ2prime_tau pseudoscalar */
+/* ************************************************* */
+
+
+
+/* ** Wilson coefficients for the muon sector ** */
+
+/* SM-like Wilson coefficients for muon */
+deltaC[7] = 0. + I*(0.) /* C7_mu */
+deltaC[9] = 0. + I*(0.) /* C9_mu */
+deltaC[10] = 0. + I*(0.) /* C10_mu */
+
+/* Primed Wilson coefficients for muon */
+deltaCp[7] = 0. + I*(0.)) /* C7prime_mu */
+deltaCp[9] = 0. + I*(0.) /* C9prime_mu */
+deltaCp[10] = 0. + I*(0.) /* C10prime_mu */
+
+/* Scalar and pseudoscalar Wilson coefficients for muon */
+deltaCQ[1] = 0. + I*(0.) /* CQ1_mu scalar */
+deltaCQ[2] = 0. + I*(0.) /* CQ2_mu pseudoscalar */
+
+/* Primed scalar and pseudoscalar Wilson coefficients for muon */
+deltaCQp[1] = 0. + I*(0.) /* CQ1prime_mu */
+deltaCQp[2] = 0. + I*(0.) /* CQ2prime_mu */
+/* ************************************************* */
+
+
+
+/* ** Wilson coefficients for the tau sector ** */
+
+/* SM-like Wilson coefficients for tau */
+deltaC[27] = 0. + I*(0.) /* C7tau */
+deltaC[29] = 0. + I*(0.) /* C9tau */
+deltaC[30] = 0. + I*(0.) /* C10tau */
+
+/* Primed Wilson coefficients for tau */
+deltaCp[27] = 0. + I*(0.) /* C7prime_tau */
+deltaCp[29] = 0. + I*(0.) /* C9prime_tau */
+deltaCp[30] = 0. + I*(0.) /* C10prime_tau */
+
+/* Scalar and pseudoscalar Wilson coefficients for tau */
+deltaCQ[5] = 0. + I*(0.) /* CQ1tau */
+deltaCQ[6] = 0. + I*(0.) /* CQ2tau  */
+
+/* Primed scalar and pseudoscalar Wilson coefficients for tau */
+deltaCQp[5] = 0. + I*(0.) /* CQ1prime_tau scalar */
+deltaCQp[6] = 0. + I*(0.) /* CQ2prime_tau pseudoscalar */
+/* ************************************************* */
