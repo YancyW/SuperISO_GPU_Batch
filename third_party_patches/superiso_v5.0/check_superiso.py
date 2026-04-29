@@ -8,6 +8,8 @@ import re
 import subprocess
 import sys
 import tempfile
+import uuid
+from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 
@@ -54,6 +56,14 @@ def parse_args():
         help=(
             "Optional path to a CalcPhysBatch executable. When available, append-table mode uses it "
             "to generate LHA files for many rows in one 2HDMC process."
+        ),
+    )
+    parser.add_argument(
+        "--superiso-worker-bin",
+        default="",
+        help=(
+            "Optional path to a persistent slha_chi2_worker executable. When available, serial chi2 runs "
+            "reuse a single SuperIso process instead of launching slha_chi2.x for each row."
         ),
     )
     parser.add_argument(
@@ -145,6 +155,82 @@ def load_all_rows(input_path):
 
 def run_command(command, cwd=None, env=None):
     return subprocess.run(command, cwd=cwd, env=env, text=True, capture_output=True)
+
+
+class PersistentSuperIsoWorker:
+    def __init__(self, worker_bin, cwd=None, env=None):
+        self.worker_bin = str(worker_bin)
+        self.cwd = str(cwd) if cwd else None
+        self.env = env
+        self.process = None
+
+    def __enter__(self):
+        self.process = subprocess.Popen(
+            [self.worker_bin],
+            cwd=self.cwd,
+            env=self.env,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        )
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        self.close()
+
+    def close(self):
+        if not self.process:
+            return
+        if self.process.stdin and not self.process.stdin.closed:
+            self.process.stdin.close()
+        try:
+            self.process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            self.process.kill()
+            self.process.wait(timeout=5)
+        self.process = None
+
+    def evaluate(self, lha_path):
+        if not self.process or not self.process.stdin or not self.process.stdout:
+            raise RuntimeError("SuperIso worker is not running")
+
+        request_id = uuid.uuid4().hex
+        self.process.stdin.write(f"{request_id}\t{lha_path}\n")
+        self.process.stdin.flush()
+
+        begin_marker = f"===BEGIN\t{request_id}==="
+        end_prefix = f"===END\t{request_id}\t"
+        seen_begin = False
+        body_lines = []
+
+        while True:
+            line = self.process.stdout.readline()
+            if line == "":
+                stderr_text = ""
+                if self.process.stderr:
+                    stderr_text = self.process.stderr.read()
+                raise RuntimeError(
+                    f"SuperIso worker exited unexpectedly while handling {lha_path}. stderr={stderr_text.strip()}"
+                )
+
+            stripped = line.rstrip("\n")
+            if not seen_begin:
+                if stripped == begin_marker:
+                    seen_begin = True
+                continue
+
+            if stripped.startswith(end_prefix) and stripped.endswith("==="):
+                rc_text = stripped[len(end_prefix):-3]
+                return subprocess.CompletedProcess(
+                    args=[self.worker_bin, str(lha_path)],
+                    returncode=int(rc_text),
+                    stdout="".join(body_lines),
+                    stderr="",
+                )
+
+            body_lines.append(line)
 
 
 def log_message(message=""):
@@ -354,12 +440,25 @@ def evaluate_existing_lha(batch_result, checker_bin, observable_names, cwd):
     }
 
 
-def evaluate_row(row, line_number, temp_dir, calcphys_bin, runtime_lib, checker_bin, observable_names, cwd):
+def evaluate_row(
+    row,
+    line_number,
+    temp_dir,
+    calcphys_bin,
+    runtime_lib,
+    checker_bin,
+    observable_names,
+    cwd,
+    superiso_worker=None,
+):
     lha_path, calcphys = build_lha(row, line_number, temp_dir, calcphys_bin, runtime_lib)
     combined = ""
     check = None
     if lha_path.exists():
-        check = run_command([str(checker_bin), str(lha_path)], cwd=str(cwd))
+        if superiso_worker is not None:
+            check = superiso_worker.evaluate(lha_path)
+        else:
+            check = run_command([str(checker_bin), str(lha_path)], cwd=str(cwd))
         combined = (check.stdout or "") + (check.stderr or "")
 
     status = determine_status(combined, lha_path.exists(), calcphys.returncode)
@@ -433,6 +532,11 @@ def main():
     calcphys_batch_bin = (
         Path(args.twohdmc_batch_bin).resolve() if args.twohdmc_batch_bin else (twohdmc_bin / "CalcPhysBatch")
     )
+    superiso_worker_bin = (
+        Path(args.superiso_worker_bin).resolve()
+        if args.superiso_worker_bin
+        else (superiso_root / "slha_chi2_worker.x")
+    )
 
     calcphys_bin = twohdmc_bin / "CalcPhys.bin"
     slha_chi2_bin = superiso_root / "slha_chi2.x"
@@ -472,12 +576,23 @@ def main():
     log_message(f"2HDMC bin: {twohdmc_bin}")
     if args.append_table and calcphys_batch_bin.exists():
         log_message(f"2HDMC batch bin: {calcphys_batch_bin}")
+    use_superiso_worker = (
+        args.mode == "chi2"
+        and max(1, args.jobs) == 1
+        and superiso_worker_bin.exists()
+    )
+    if use_superiso_worker:
+        log_message(f"SuperIso worker bin: {superiso_worker_bin}")
     log_message(f"Check mode: {args.mode}")
     if args.append_table:
         log_message("Append-table mode: enabled")
         log_message(f"Parallel jobs: {max(1, args.jobs)}")
         log_message(f"Checkpoint every: {max(1, args.checkpoint_every)}")
     log_message()
+
+    worker_env = os.environ.copy()
+    if runtime_lib:
+        worker_env["LD_LIBRARY_PATH"] = f"{runtime_lib}:{worker_env.get('LD_LIBRARY_PATH', '')}".rstrip(":")
 
     with tempfile.TemporaryDirectory(prefix="superiso_npdata_") as temp_dir:
         appended_rows = []
@@ -504,122 +619,132 @@ def main():
                 f"2HDMC batch generation finished with rc={batch_run.returncode} for {len(prepared_rows)} requested rows"
             )
 
-        if args.append_table and max(1, args.jobs) > 1:
-            def task(payload):
-                line_number, original_row, working_row, dataset_type, mapped_type = payload
-                if batch_results is not None:
-                    evaluation = evaluate_existing_lha(
-                        batch_results[line_number],
-                        checker_bin,
-                        observable_names,
-                        superiso_root,
-                    )
-                else:
-                    evaluation = evaluate_row(
-                        working_row,
-                        line_number,
-                        temp_dir,
-                        calcphys_bin,
-                        runtime_lib,
-                        checker_bin,
-                        observable_names,
-                        superiso_root,
-                    )
-                appended_row = make_appended_row(original_row, dataset_type, mapped_type, evaluation, observable_names)
-                return line_number, appended_row
+        worker_context = (
+            PersistentSuperIsoWorker(superiso_worker_bin, cwd=superiso_root, env=worker_env)
+            if use_superiso_worker
+            else None
+        )
 
-            result_map = {}
-            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as executor:
-                future_map = {executor.submit(task, payload): payload[0] for payload in prepared_rows}
-                completed = 0
-                for future in concurrent.futures.as_completed(future_map):
-                    line_number, appended_row = future.result()
-                    result_map[line_number] = appended_row
-                    completed += 1
-                    if completed % 10 == 0 or completed == len(prepared_rows):
-                        log_message(f"Processed {completed}/{len(prepared_rows)} rows...")
-                    if completed % max(1, args.checkpoint_every) == 0 or completed == len(prepared_rows):
-                        partial_rows = build_partial_rows(prepared_rows, result_map)
-                        write_appended_table(output_path, original_fieldnames, partial_rows)
-                        log_message(f"Checkpoint written: {len(partial_rows)}/{len(prepared_rows)} rows -> {output_path}")
+        with worker_context if worker_context is not None else nullcontext():
+            active_worker = worker_context if worker_context is not None else None
 
-            appended_rows = [result_map[line_number] for line_number, *_ in prepared_rows]
-        else:
-            for line_number, original_row, working_row, dataset_type, mapped_type in prepared_rows:
-                if batch_results is not None:
-                    evaluation = evaluate_existing_lha(
-                        batch_results[line_number],
-                        checker_bin,
-                        observable_names,
-                        superiso_root,
+            if args.append_table and max(1, args.jobs) > 1:
+                def task(payload):
+                    line_number, original_row, working_row, dataset_type, mapped_type = payload
+                    if batch_results is not None:
+                        evaluation = evaluate_existing_lha(
+                            batch_results[line_number],
+                            checker_bin,
+                            observable_names,
+                            superiso_root,
+                        )
+                    else:
+                        evaluation = evaluate_row(
+                            working_row,
+                            line_number,
+                            temp_dir,
+                            calcphys_bin,
+                            runtime_lib,
+                            checker_bin,
+                            observable_names,
+                            superiso_root,
+                        )
+                    appended_row = make_appended_row(original_row, dataset_type, mapped_type, evaluation, observable_names)
+                    return line_number, appended_row
+
+                result_map = {}
+                with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as executor:
+                    future_map = {executor.submit(task, payload): payload[0] for payload in prepared_rows}
+                    completed = 0
+                    for future in concurrent.futures.as_completed(future_map):
+                        line_number, appended_row = future.result()
+                        result_map[line_number] = appended_row
+                        completed += 1
+                        if completed % 10 == 0 or completed == len(prepared_rows):
+                            log_message(f"Processed {completed}/{len(prepared_rows)} rows...")
+                        if completed % max(1, args.checkpoint_every) == 0 or completed == len(prepared_rows):
+                            partial_rows = build_partial_rows(prepared_rows, result_map)
+                            write_appended_table(output_path, original_fieldnames, partial_rows)
+                            log_message(f"Checkpoint written: {len(partial_rows)}/{len(prepared_rows)} rows -> {output_path}")
+
+                appended_rows = [result_map[line_number] for line_number, *_ in prepared_rows]
+            else:
+                for line_number, original_row, working_row, dataset_type, mapped_type in prepared_rows:
+                    if batch_results is not None:
+                        evaluation = evaluate_existing_lha(
+                            batch_results[line_number],
+                            checker_bin,
+                            observable_names,
+                            superiso_root,
+                        )
+                    else:
+                        evaluation = evaluate_row(
+                            working_row,
+                            line_number,
+                            temp_dir,
+                            calcphys_bin,
+                            runtime_lib,
+                            checker_bin,
+                            observable_names,
+                            superiso_root,
+                            superiso_worker=active_worker,
+                        )
+
+                    if args.append_table:
+                        appended_rows.append(
+                            make_appended_row(original_row, dataset_type, mapped_type, evaluation, observable_names)
+                        )
+                        if len(appended_rows) % 10 == 0 or len(appended_rows) == len(prepared_rows):
+                            log_message(f"Processed {len(appended_rows)}/{len(prepared_rows)} rows...")
+                        if len(appended_rows) % max(1, args.checkpoint_every) == 0 or len(appended_rows) == len(prepared_rows):
+                            write_appended_table(output_path, original_fieldnames, appended_rows)
+                            log_message(f"Checkpoint written: {len(appended_rows)}/{len(prepared_rows)} rows -> {output_path}")
+                        continue
+
+                    print(f"=== Row {line_number} ===")
+                    print(
+                        "params: "
+                        f"mh={working_row['mh']} mH={working_row['mH']} mA={working_row['mA']} mC={working_row['mC']} "
+                        f"sba={working_row['sba']} tb={working_row['tb']} m12_2={working_row['m12_2']} "
+                        f"type(dataset={dataset_type} -> superiso={mapped_type})"
                     )
-                else:
-                    evaluation = evaluate_row(
-                        working_row,
-                        line_number,
-                        temp_dir,
-                        calcphys_bin,
-                        runtime_lib,
-                        checker_bin,
-                        observable_names,
-                        superiso_root,
-                    )
+                    print(f"2HDMC return code: {evaluation['calcphys'].returncode}")
+                    stdout = evaluation["calcphys"].stdout.strip()
+                    stderr = evaluation["calcphys"].stderr.strip()
+                    if stdout:
+                        print("2HDMC stdout:")
+                        print(stdout)
+                    if stderr:
+                        print("2HDMC stderr:")
+                        print(stderr)
 
-                if args.append_table:
-                    appended_rows.append(
-                        make_appended_row(original_row, dataset_type, mapped_type, evaluation, observable_names)
-                    )
-                    if len(appended_rows) % 10 == 0 or len(appended_rows) == len(prepared_rows):
-                        log_message(f"Processed {len(appended_rows)}/{len(prepared_rows)} rows...")
-                    if len(appended_rows) % max(1, args.checkpoint_every) == 0 or len(appended_rows) == len(prepared_rows):
-                        write_appended_table(output_path, original_fieldnames, appended_rows)
-                        log_message(f"Checkpoint written: {len(appended_rows)}/{len(prepared_rows)} rows -> {output_path}")
-                    continue
+                    if evaluation["status"] == "2hdmc_failed" or evaluation["status"] == "lha_missing":
+                        print("SuperIso status: skipped, because 2HDMC did not produce an LHA file")
+                        print()
+                        continue
 
-                print(f"=== Row {line_number} ===")
-                print(
-                    "params: "
-                    f"mh={working_row['mh']} mH={working_row['mH']} mA={working_row['mA']} mC={working_row['mC']} "
-                    f"sba={working_row['sba']} tb={working_row['tb']} m12_2={working_row['m12_2']} "
-                    f"type(dataset={dataset_type} -> superiso={mapped_type})"
-                )
-                print(f"2HDMC return code: {evaluation['calcphys'].returncode}")
-                stdout = evaluation["calcphys"].stdout.strip()
-                stderr = evaluation["calcphys"].stderr.strip()
-                if stdout:
-                    print("2HDMC stdout:")
-                    print(stdout)
-                if stderr:
-                    print("2HDMC stderr:")
-                    print(stderr)
+                    print(f"SuperIso return code: {evaluation['check'].returncode}")
+                    print(f"SuperIso status: {evaluation['status']}")
 
-                if evaluation["status"] == "2hdmc_failed" or evaluation["status"] == "lha_missing":
-                    print("SuperIso status: skipped, because 2HDMC did not produce an LHA file")
+                    if evaluation["chi2"] is not None:
+                        print(f"SuperIso chi2: {evaluation['chi2']:.4f}")
+
+                    key_lines = []
+                    for line in evaluation["combined"].splitlines():
+                        if (
+                            "chi2" in line
+                            or "Invalid point" in line
+                            or "BR(b->s gamma)" in line
+                            or "BR(Bs->mu mu)" in line
+                            or "a_muon" in line
+                        ):
+                            key_lines.append(line)
+
+                    if key_lines:
+                        print("SuperIso excerpt:")
+                        for line in key_lines[:12]:
+                            print(line)
                     print()
-                    continue
-
-                print(f"SuperIso return code: {evaluation['check'].returncode}")
-                print(f"SuperIso status: {evaluation['status']}")
-
-                if evaluation["chi2"] is not None:
-                    print(f"SuperIso chi2: {evaluation['chi2']:.4f}")
-
-                key_lines = []
-                for line in evaluation["combined"].splitlines():
-                    if (
-                        "chi2" in line
-                        or "Invalid point" in line
-                        or "BR(b->s gamma)" in line
-                        or "BR(Bs->mu mu)" in line
-                        or "a_muon" in line
-                    ):
-                        key_lines.append(line)
-
-                if key_lines:
-                    print("SuperIso excerpt:")
-                    for line in key_lines[:12]:
-                        print(line)
-                print()
 
         if args.append_table:
             write_appended_table(output_path, original_fieldnames, appended_rows)
