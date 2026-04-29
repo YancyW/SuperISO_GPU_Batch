@@ -2,9 +2,10 @@
 
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NP_DIR="$ROOT_DIR/np_data"
 LOG_DIR="$NP_DIR/superiso_batch_logs"
+CHECK_SUPERISO="$ROOT_DIR/third_party_patches/superiso_v5.0/check_superiso.py"
 JOBS="${1:-8}"
 CHECKPOINT_EVERY="${2:-50}"
 
@@ -31,10 +32,10 @@ find "$NP_DIR" -maxdepth 1 -type f -name 'scan_after*.dat' \
       printf '[%s] RESUME partial output: %s\n' "$(date '+%F %T')" "$output_file" | tee -a "$log_file"
     else
       printf '[%s] START %s\n' "$(date '+%F %T')" "$input_file" | tee "$log_file"
-      printf 'COMMAND: %s\n' "python3 -u np_data/check_superiso.py np_data/$(basename "$input_file") --mode chi2 --append-table --jobs $JOBS --checkpoint-every $CHECKPOINT_EVERY --output-file np_data/$(basename "$output_file")" | tee -a "$log_file"
+      printf 'COMMAND: %s\n' "python3 -u third_party_patches/superiso_v5.0/check_superiso.py np_data/$(basename "$input_file") --mode chi2 --append-table --jobs $JOBS --checkpoint-every $CHECKPOINT_EVERY --output-file np_data/$(basename "$output_file")" | tee -a "$log_file"
     fi
 
-    python3 -u np_data/check_superiso.py "np_data/$(basename "$input_file")" \
+    python3 -u "$CHECK_SUPERISO" "np_data/$(basename "$input_file")" \
       --mode chi2 \
       --append-table \
       --jobs "$JOBS" \

@@ -1,6 +1,4 @@
 np_data/*
-!np_data/check_superiso.py
-!np_data/run_superiso_batch.sh
 !np_data/README.md
 .vscode/
 

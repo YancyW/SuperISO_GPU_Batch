@@ -35,6 +35,25 @@ cd superiso_vX.X
 make
 ```
 
+## Local Helper Scripts For np_data
+
+In this repository, the automation used to append SuperIso results to the scan tables in `np_data/` is intentionally kept outside the data directory.
+
+- `third_party_patches/superiso_v5.0/check_superiso.py`: reads `np_data/scan_after*.dat`, generates LHA files through 2HDMC, runs `slha_chi2.x` or `slha.x`, and can append the resulting SuperIso columns back to a table.
+- `third_party_patches/superiso_v5.0/run_superiso_batch.sh`: loops over the eligible `np_data/scan_after*.dat` files, writes progress logs to `np_data/superiso_batch_logs/`, and resumes unfinished `_superiso.dat` outputs.
+
+Typical usage in this workspace is:
+
+```bash
+python3 -u third_party_patches/superiso_v5.0/check_superiso.py np_data/scan_after_hs.dat \
+  --mode chi2 --append-table --jobs 8 --checkpoint-every 50 \
+  --output-file np_data/scan_after_hs_superiso.dat
+
+bash third_party_patches/superiso_v5.0/run_superiso_batch.sh 8 50
+```
+
+The `np_data/` directory should therefore be treated as a data-and-log area, not as the home of reusable program entrypoints.
+
 17 main programs are available:
 
 | Program | Description |

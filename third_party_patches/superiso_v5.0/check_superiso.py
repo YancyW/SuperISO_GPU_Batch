@@ -12,6 +12,10 @@ from datetime import datetime
 from pathlib import Path
 
 
+def repo_root_from_script():
+    return Path(__file__).resolve().parents[2]
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description=(
@@ -36,8 +40,8 @@ def parse_args():
     )
     parser.add_argument(
         "--superiso-root",
-        default=str(Path(__file__).resolve().parents[1]),
-        help="SuperIso root directory. Defaults to the parent of np_data/.",
+        default=str(repo_root_from_script()),
+        help="SuperIso root directory. Defaults to the repository root.",
     )
     parser.add_argument(
         "--twohdmc-bin",
